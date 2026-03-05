@@ -1,6 +1,5 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from flask_mail import Mail, Message
 import pymysql
 import boto3
 import os
@@ -14,9 +13,10 @@ from functools import wraps
 from botocore.exceptions import NoCredentialsError
 import uuid
 import threading
+import resend
 
 load_dotenv()
-
+resend.api_key = os.environ.get("RESEND_API_KEY")
 app = Flask(__name__)
 
 # ─────────────────────────────────
@@ -70,27 +70,20 @@ AWS_SECRET_KEY = os.environ.get("AWS_SECRET_KEY")
 
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "").strip().lower()
 
-# ─────────────────────────────────
-# EMAIL CONFIG
-# ─────────────────────────────────
+def send_email(email, subject, html):
 
-app.config["MAIL_SERVER"] = os.environ.get("MAIL_SERVER", "smtp.gmail.com")
-app.config["MAIL_PORT"] = int(os.environ.get("MAIL_PORT", 587))
-app.config["MAIL_USE_TLS"] = True
-app.config["MAIL_USE_SSL"] = False
-app.config["MAIL_USERNAME"] = os.environ.get("MAIL_USERNAME")
-app.config["MAIL_PASSWORD"] = os.environ.get("MAIL_PASSWORD")
-app.config["MAIL_DEFAULT_SENDER"] = os.environ.get("MAIL_USERNAME")
+    try:
+        resend.Emails.send({
+            "from": "ListenMe <onboarding@resend.dev>",
+            "to": [email],
+            "subject": subject,
+            "html": html
+        })
 
-mail = Mail(app)
+        print("EMAIL SENT SUCCESS")
 
-def send_email_async(app, msg):
-    with app.app_context():
-        try:
-            mail.send(msg)
-            print("EMAIL SENT SUCCESS")
-        except Exception as e:
-            print("EMAIL ERROR:", e)
+    except Exception as e:
+        print("EMAIL ERROR:", e)
 
 # ─── DATABASE ──────────────────────────────────────────────────────────────────
 def get_db():
@@ -331,20 +324,14 @@ def signup():
         # SEND EMAIL (safe)
         try:
 
-            msg = Message(
+            send_email(
+                email,
                 "Verify your ListenMe account",
-                recipients=[email]
-            )
-
-            msg.html = _email_base(f"""
-                <h2>Your verification code</h2>
-                <h1 style="letter-spacing:6px">{otp}</h1>
+                _email_base(f"""
+                    <h2>Your verification code</h2>
+               <h1 style="letter-spacing:6px">{otp}</h1>
             """)
-            threading.Thread(
-                 target=send_email_async,
-                  args=(app, msg)
-            ).start()
-
+)
         except Exception as e:
 
             print("EMAIL ERROR:", e)
@@ -430,12 +417,11 @@ def resend_otp():
           </div>
           <p style="color:#475569;font-size:13px;">Expires in 10 minutes.</p>
         """
-        msg = Message('Your new ListenMe verification code', recipients=[email])
-        msg.html = _email_base(content)
-        threading.Thread(
-           target=send_email_async,
-           args=(app, msg)
-        ).start()
+        send_email(
+            email,
+            "Your new ListenMe verification code",
+            _email_base(content)
+      )
         return jsonify({'message': 'New code sent.'}), 200
     finally:
         conn.close()
@@ -470,12 +456,11 @@ def login():
                   </div>
                   <p style="color:#475569;font-size:13px;">Expires in 10 minutes.</p>
                 """
-                msg = Message('Verify your ListenMe account', recipients=[email])
-                msg.html = _email_base(content)
-                threading.Thread(
-                     target=send_email_async,
-                      args=(app, msg)
-                ).start()
+                send_email(
+                      email,
+                      "Verify your ListenMe account",
+                  _email_base(content)
+                 )
                 return jsonify({'error': 'verify_required', 'email': email}), 403
 
             # Update admin flag from env in case it changed
@@ -559,13 +544,11 @@ def forgot_password():
                 </a>
                 """
 
-                msg = Message('Reset your ListenMe password', recipients=[email])
-                msg.html = _email_base(content)
-
-                threading.Thread(
-                    target=send_email_async,
-                    args=(app, msg)
-                ).start()
+                send_email(
+                      email,
+                     "Reset your ListenMe password",
+                      _email_base(content)
+                )
 
         return jsonify({'message': 'If this email is registered, a reset link has been sent.'}), 200
 
