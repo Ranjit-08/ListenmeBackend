@@ -20,13 +20,16 @@ app = Flask(__name__)
 
 # ─── CORS ──────────────────────────────────────────────────────────────────────
 from flask_cors import CORS
-import os
-
-FRONTEND_URL = os.environ.get("FRONTEND_URL")
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://ranjit-9qx.pages.dev")
 
 CORS(
     app,
-    resources={r"/api/*": {"origins": FRONTEND_URL}},
+    resources={r"/api/*": {"origins": [
+        FRONTEND_URL,
+        "https://ranjit-9qx.pages.dev",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000"
+    ]}},
     supports_credentials=True
 )
 # ─── CONFIG ────────────────────────────────────────────────────────────────────
