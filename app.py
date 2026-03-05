@@ -19,17 +19,15 @@ load_dotenv()
 app = Flask(__name__)
 
 # ─── CORS ──────────────────────────────────────────────────────────────────────
+from flask_cors import CORS
+import os
+
 FRONTEND_URL = os.environ.get("FRONTEND_URL")
 
 CORS(
     app,
-    origins=[
-        FRONTEND_URL,
-        "http://localhost",
-        "http://127.0.0.1"
-    ],
-    supports_credentials=True,
-    allow_headers=["Content-Type", "Authorization"]
+    resources={r"/api/*": {"origins": FRONTEND_URL}},
+    supports_credentials=True
 )
 # ─── CONFIG ────────────────────────────────────────────────────────────────────
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'change-me-to-a-long-random-string')
