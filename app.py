@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 from functools import wraps
 from botocore.exceptions import NoCredentialsError
 import uuid
+import threading
 
 load_dotenv()
 
@@ -26,10 +27,12 @@ FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://ranjit-9qx.pages.dev")
 
 CORS(
     app,
-    origins=[
-        "https://ranjit-9qx.pages.dev",
-        "http://localhost:3000"
-    ],
+    resources={r"/api/*": {
+        "origins": [
+            "https://ranjit-9qx.pages.dev",
+            "http://localhost:3000"
+        ]
+    }},
     supports_credentials=True
 )
 
@@ -80,6 +83,14 @@ app.config["MAIL_PASSWORD"] = os.environ.get("MAIL_PASSWORD")
 app.config["MAIL_DEFAULT_SENDER"] = os.environ.get("MAIL_USERNAME")
 
 mail = Mail(app)
+
+def send_email_async(app, msg):
+    with app.app_context():
+        try:
+            mail.send(msg)
+            print("EMAIL SENT SUCCESS")
+        except Exception as e:
+            print("EMAIL ERROR:", e)
 
 # ─── DATABASE ──────────────────────────────────────────────────────────────────
 def get_db():
@@ -329,10 +340,10 @@ def signup():
                 <h2>Your verification code</h2>
                 <h1 style="letter-spacing:6px">{otp}</h1>
             """)
-
-            mail.send(msg)
-
-            print("OTP EMAIL SENT")
+            threading.Thread(
+                 target=send_email_async,
+                  args=(app, msg)
+            ).start()
 
         except Exception as e:
 
@@ -345,7 +356,7 @@ def signup():
         print("SIGNUP ERROR:", e)
 
         return jsonify({'error': 'Server error'}), 500
-        
+
 @app.route('/api/auth/verify-email', methods=['POST'])
 def verify_email():
     data  = request.get_json()
@@ -421,7 +432,10 @@ def resend_otp():
         """
         msg = Message('Your new ListenMe verification code', recipients=[email])
         msg.html = _email_base(content)
-        mail.send(msg)
+        threading.Thread(
+           target=send_email_async,
+           args=(app, msg)
+        ).start()
         return jsonify({'message': 'New code sent.'}), 200
     finally:
         conn.close()
@@ -458,10 +472,10 @@ def login():
                 """
                 msg = Message('Verify your ListenMe account', recipients=[email])
                 msg.html = _email_base(content)
-                try:
-                    mail.send(msg)
-                except Exception:
-                    pass
+                threading.Thread(
+                     target=send_email_async,
+                      args=(app, msg)
+                ).start()
                 return jsonify({'error': 'verify_required', 'email': email}), 403
 
             # Update admin flag from env in case it changed
@@ -510,50 +524,53 @@ def me():
 def forgot_password():
     data  = request.get_json()
     email = data.get('email', '').strip().lower()
+
     if not email:
         return jsonify({'error': 'Email is required'}), 400
 
     conn = get_db()
+
     try:
         with conn.cursor() as c:
             c.execute("SELECT id, name FROM users WHERE email=%s AND verified=TRUE", (email,))
             user = c.fetchone()
+
             if user:
-                reset_token = str(uuid.uuid4()).replace('-','') + str(uuid.uuid4()).replace('-','')
-                expires     = datetime.datetime.utcnow() + datetime.timedelta(hours=1)
+                reset_token = str(uuid.uuid4()).replace('-', '') + str(uuid.uuid4()).replace('-', '')
+                expires = datetime.datetime.utcnow() + datetime.timedelta(hours=1)
+
                 c.execute("UPDATE password_reset_tokens SET used=TRUE WHERE email=%s", (email,))
                 c.execute(
                     "INSERT INTO password_reset_tokens (email, token, expires_at) VALUES (%s,%s,%s)",
                     (email, reset_token, expires)
                 )
-                app_url    = os.environ.get('APP_URL', '').rstrip('/')
+
+                app_url = os.environ.get('APP_URL', '').rstrip('/')
                 reset_link = f"{app_url}/reset-password.html?token={reset_token}"
 
                 content = f"""
-                  <p style="font-size:18px;font-weight:700;margin:0 0 8px;">Reset your password</p>
-                  <p style="color:#94a3b8;margin:0 0 28px;">
-                    Hi {user['name']}, click below to reset your password.
-                  </p>
-                  <div style="text-align:center;margin:32px 0;">
-                    <a href="{reset_link}"
-                       style="background:#1db954;color:#000;
-                              padding:16px 40px;border-radius:50px;text-decoration:none;
-                              font-weight:700;font-size:16px;display:inline-block;">
-                      Reset My Password →
-                    </a>
-                  </div>
-                  <p style="color:#475569;font-size:13px;">
-                    This link expires in <strong style="color:#e2e8f0;">1 hour</strong>.<br/>
-                    If you didn't request this, just ignore this email.
-                  </p>
+                <p style="font-size:18px;font-weight:700;">Reset your password</p>
+                <p>Hi {user['name']}, click the button below.</p>
+                <a href="{reset_link}"
+                   style="background:#1db954;color:#000;
+                   padding:14px 30px;border-radius:30px;
+                   text-decoration:none;font-weight:700;">
+                   Reset Password
+                </a>
                 """
+
                 msg = Message('Reset your ListenMe password', recipients=[email])
                 msg.html = _email_base(content)
-                mail.send(msg)
+
+                threading.Thread(
+                    target=send_email_async,
+                    args=(app, msg)
+                ).start()
+
         return jsonify({'message': 'If this email is registered, a reset link has been sent.'}), 200
+
     finally:
         conn.close()
-
 
 @app.route('/api/auth/reset-password', methods=['POST'])
 def reset_password():
