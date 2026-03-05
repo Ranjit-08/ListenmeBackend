@@ -26,16 +26,10 @@ FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://ranjit-9qx.pages.dev")
 
 CORS(
     app,
-    resources={
-        r"/api/*": {
-            "origins": [
-                FRONTEND_URL,
-                "https://ranjit-9qx.pages.dev",
-                "http://localhost:3000",
-                "http://127.0.0.1:3000"
-            ]
-        }
-    },
+    origins=[
+        "https://ranjit-9qx.pages.dev",
+        "http://localhost:3000"
+    ],
     supports_credentials=True
 )
 
@@ -279,54 +273,79 @@ def _email_base(content):
 
 @app.route('/api/auth/signup', methods=['POST'])
 def signup():
-    data     = request.get_json()
-    email    = data.get('email', '').strip().lower()
-    password = data.get('password', '')
-    name     = data.get('name', '').strip()
-
-    if not email or not password or not name:
-        return jsonify({'error': 'All fields are required'}), 400
-    if len(password) < 6:
-        return jsonify({'error': 'Password must be at least 6 characters'}), 400
-
-    conn = get_db()
     try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({'error': 'Invalid request'}), 400
+
+        email = data.get('email', '').strip().lower()
+        password = data.get('password', '')
+        name = data.get('name', '').strip()
+
+        if not email or not password or not name:
+            return jsonify({'error': 'All fields are required'}), 400
+
+        if len(password) < 6:
+            return jsonify({'error': 'Password must be at least 6 characters'}), 400
+
+        conn = get_db()
+
         with conn.cursor() as c:
+
             c.execute("SELECT id FROM users WHERE email=%s", (email,))
             if c.fetchone():
                 return jsonify({'error': 'This email is already registered'}), 409
 
-            hashed   = hash_password(password)
+            hashed = hash_password(password)
+
             is_admin = (email == ADMIN_EMAIL) if ADMIN_EMAIL else False
+
             c.execute(
                 "INSERT INTO users (email, password, name, is_admin, verified) VALUES (%s,%s,%s,%s,FALSE)",
                 (email, hashed, name, is_admin)
             )
-            otp     = generate_otp()
-            expires = datetime.datetime.utcnow() + datetime.timedelta(minutes=10)
-            c.execute("INSERT INTO otp_codes (email, code, expires_at) VALUES (%s,%s,%s)",
-                      (email, otp, expires))
 
-        content = f"""
-          <p style="font-size:18px;font-weight:700;margin:0 0 8px;">Welcome to ListenMe, {name}! 🎶</p>
-          <p style="color:#94a3b8;margin:0 0 28px;">Please verify your email to start listening.</p>
-          <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;
-                      padding:28px;text-align:center;margin-bottom:28px;">
-            <p style="color:#64748b;margin:0 0 10px;font-size:13px;text-transform:uppercase;letter-spacing:2px;">
-              Verification Code
-            </p>
-            <div style="font-size:42px;font-weight:900;letter-spacing:14px;color:#1db954;">{otp}</div>
-          </div>
-          <p style="color:#475569;font-size:13px;">Expires in 10 minutes.</p>
-        """
-        msg = Message('Verify your ListenMe account', recipients=[email])
-        msg.html = _email_base(content)
-        mail.send(msg)
-        return jsonify({'message': 'Check your email for a verification code.'}), 201
-    finally:
+            otp = generate_otp()
+
+            expires = datetime.datetime.utcnow() + datetime.timedelta(minutes=10)
+
+            c.execute(
+                "INSERT INTO otp_codes (email, code, expires_at) VALUES (%s,%s,%s)",
+                (email, otp, expires)
+            )
+
         conn.close()
 
+        # SEND EMAIL (safe)
+        try:
 
+            msg = Message(
+                "Verify your ListenMe account",
+                recipients=[email]
+            )
+
+            msg.html = _email_base(f"""
+                <h2>Your verification code</h2>
+                <h1 style="letter-spacing:6px">{otp}</h1>
+            """)
+
+            mail.send(msg)
+
+            print("OTP EMAIL SENT")
+
+        except Exception as e:
+
+            print("EMAIL ERROR:", e)
+
+        return jsonify({'message': 'Verification code sent'}), 201
+
+    except Exception as e:
+
+        print("SIGNUP ERROR:", e)
+
+        return jsonify({'error': 'Server error'}), 500
+        
 @app.route('/api/auth/verify-email', methods=['POST'])
 def verify_email():
     data  = request.get_json()
