@@ -164,9 +164,11 @@ def init_db():
 # ─── S3 ────────────────────────────────────────────────────────────────────────
 def get_s3():
     return boto3.client(
-        's3', region_name=S3_REGION,
+        "s3",
+        endpoint_url=os.environ.get("S3_ENDPOINT"),
         aws_access_key_id=AWS_ACCESS_KEY,
-        aws_secret_access_key=AWS_SECRET_KEY
+        aws_secret_access_key=AWS_SECRET_KEY,
+        region_name=os.environ.get("S3_REGION")
     )
 
 def hash_password(p):
