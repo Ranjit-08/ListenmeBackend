@@ -18,43 +18,72 @@ load_dotenv()
 
 app = Flask(__name__)
 
-# ─── CORS ──────────────────────────────────────────────────────────────────────
-from flask_cors import CORS
+# ─────────────────────────────────
+# CORS CONFIG
+# ─────────────────────────────────
+
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://ranjit-9qx.pages.dev")
 
 CORS(
     app,
-    resources={r"/api/*": {"origins": [
-        FRONTEND_URL,
-        "https://ranjit-9qx.pages.dev",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000"
-    ]}},
+    resources={
+        r"/api/*": {
+            "origins": [
+                FRONTEND_URL,
+                "https://ranjit-9qx.pages.dev",
+                "http://localhost:3000",
+                "http://127.0.0.1:3000"
+            ]
+        }
+    },
     supports_credentials=True
 )
-# ─── CONFIG ────────────────────────────────────────────────────────────────────
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'change-me-to-a-long-random-string')
 
-DB_HOST     = os.environ.get('DB_HOST',     'localhost')
-DB_USER     = os.environ.get('DB_USER',     'admin')
-DB_PASSWORD = os.environ.get('DB_PASSWORD', 'password')
-DB_NAME     = os.environ.get('DB_NAME',     'listenme')
-DB_PORT     = int(os.environ.get('DB_PORT', 3306))
+# ─────────────────────────────────
+# SECRET
+# ─────────────────────────────────
 
-S3_BUCKET      = os.environ.get('S3_BUCKET',      'your-listenme-bucket')
-S3_REGION      = os.environ.get('S3_REGION',      'us-east-1')
-AWS_ACCESS_KEY = os.environ.get('AWS_ACCESS_KEY', '')
-AWS_SECRET_KEY = os.environ.get('AWS_SECRET_KEY', '')
+app.config["SECRET_KEY"] = os.environ.get(
+    "SECRET_KEY",
+    "change-this-secret-key-in-production"
+)
 
-# Admin email — whoever has this email gets admin privileges
-ADMIN_EMAIL = os.environ.get('ADMIN_EMAIL', '').strip().lower()
+# ─────────────────────────────────
+# DATABASE CONFIG
+# ─────────────────────────────────
 
-app.config['MAIL_SERVER']         = os.environ.get('MAIL_SERVER',   'smtp.gmail.com')
-app.config['MAIL_PORT']           = int(os.environ.get('MAIL_PORT', 587))
-app.config['MAIL_USE_TLS']        = True
-app.config['MAIL_USERNAME']       = os.environ.get('MAIL_USERNAME', '')
-app.config['MAIL_PASSWORD']       = os.environ.get('MAIL_PASSWORD', '')
-app.config['MAIL_DEFAULT_SENDER'] = os.environ.get('MAIL_USERNAME', '')
+DB_HOST = os.environ.get("DB_HOST", "localhost")
+DB_USER = os.environ.get("DB_USER", "admin")
+DB_PASSWORD = os.environ.get("DB_PASSWORD", "password")
+DB_NAME = os.environ.get("DB_NAME", "listenme")
+DB_PORT = int(os.environ.get("DB_PORT", 3306))
+
+# ─────────────────────────────────
+# S3 CONFIG
+# ─────────────────────────────────
+
+S3_BUCKET = os.environ.get("S3_BUCKET")
+S3_REGION = os.environ.get("S3_REGION", "us-east-1")
+AWS_ACCESS_KEY = os.environ.get("AWS_ACCESS_KEY")
+AWS_SECRET_KEY = os.environ.get("AWS_SECRET_KEY")
+
+# ─────────────────────────────────
+# ADMIN EMAIL
+# ─────────────────────────────────
+
+ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "").strip().lower()
+
+# ─────────────────────────────────
+# EMAIL CONFIG
+# ─────────────────────────────────
+
+app.config["MAIL_SERVER"] = os.environ.get("MAIL_SERVER", "smtp.gmail.com")
+app.config["MAIL_PORT"] = int(os.environ.get("MAIL_PORT", 587))
+app.config["MAIL_USE_TLS"] = True
+app.config["MAIL_USE_SSL"] = False
+app.config["MAIL_USERNAME"] = os.environ.get("MAIL_USERNAME")
+app.config["MAIL_PASSWORD"] = os.environ.get("MAIL_PASSWORD")
+app.config["MAIL_DEFAULT_SENDER"] = os.environ.get("MAIL_USERNAME")
 
 mail = Mail(app)
 
