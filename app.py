@@ -14,7 +14,6 @@ from botocore.exceptions import NoCredentialsError
 import uuid
 import threading
 import requests as http_requests
-from email.mime.multipart import MIMEMultipart
 
 load_dotenv()
 
@@ -71,7 +70,26 @@ APP_URL     = os.environ.get("APP_URL",     "https://ranjit-9qx.pages.dev").rstr
 # ═══════════════════════════════════════════════════════════════════════════════
 #  EMAIL — background thread so it NEVER blocks / times out the request
 # ═══════════════════════════════════════════════════════════════════════════════
-
+def _send_email_worker(to_email, subject, html):
+    try:
+        resp = http_requests.post(
+            "https://api.resend.com/emails",
+            headers={
+                "Authorization": f"Bearer {os.environ.get('RESEND_API_KEY', '')}",
+                "Content-Type":  "application/json",
+            },
+            json={
+                "from":    "ListenMe <onboarding@resend.dev>",
+                "to":      [to_email],
+                "subject": subject,
+                "html":    html,
+            },
+            timeout=15
+        )
+        print(f"EMAIL SENT to {to_email} — {resp.status_code}: {resp.text}")
+    except Exception as e:
+        print(f"EMAIL ERROR to {to_email}: {e}")
+        
 def send_email(to_email, subject, html):
     """Fire-and-forget — returns instantly, email sends in background."""
     threading.Thread(
