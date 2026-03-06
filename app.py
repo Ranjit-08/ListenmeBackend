@@ -79,7 +79,7 @@ def _send_email_worker(to_email, subject, html):
                 "Content-Type":  "application/json",
             },
             json={
-                "from":    "ListenMe <onboarding@resend.dev>",
+                "from":    "ListenMe <otp@arjsu.shop>",
                 "to":      [to_email],
                 "subject": subject,
                 "html":    html,
