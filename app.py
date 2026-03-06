@@ -13,8 +13,7 @@ from functools import wraps
 from botocore.exceptions import NoCredentialsError
 import uuid
 import threading
-import smtplib
-from email.mime.text import MIMEText
+import requests as http_requests
 from email.mime.multipart import MIMEMultipart
 
 load_dotenv()
@@ -73,26 +72,6 @@ APP_URL     = os.environ.get("APP_URL",     "https://ranjit-9qx.pages.dev").rstr
 #  EMAIL — background thread so it NEVER blocks / times out the request
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def _send_email_worker(to_email, subject, html):
-    try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"]    = f"{MAIL_FROM_NAME} <{GMAIL_USER}>"
-        msg["To"]      = to_email
-        msg.attach(MIMEText(html, "html"))
-
-        with smtplib.SMTP("smtp.gmail.com", 587, timeout=30) as server:
-            server.ehlo()
-            server.starttls()
-            server.login(GMAIL_USER, GMAIL_PASSWORD)
-            server.sendmail(GMAIL_USER, to_email, msg.as_string())
-
-        print(f"EMAIL SENT to {to_email}")
-
-    except Exception as e:
-        print(f"EMAIL ERROR to {to_email}: {e}")
-
-
 def send_email(to_email, subject, html):
     """Fire-and-forget — returns instantly, email sends in background."""
     threading.Thread(
@@ -101,7 +80,6 @@ def send_email(to_email, subject, html):
         daemon=True
     ).start()
     return True
-
 
 # ─── EMAIL TEMPLATE ────────────────────────────────────────────────────────────
 
