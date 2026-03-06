@@ -58,7 +58,7 @@ AWS_SECRET_KEY = os.environ.get("AWS_SECRET_KEY", "K005D6N2B91manO8ch1pKno+nhmQp
 # ─────────────────────────────────
 
 GMAIL_USER     = "ranjit999yt@gmail.com"
-GMAIL_PASSWORD = "kcsmehmhodudnnbm"   # Gmail App Password — 16 chars no spaces
+GMAIL_PASSWORD = "ncyyuueotsbxflcf"   # Gmail App Password — 16 chars no spaces
 MAIL_FROM_NAME = "ListenMe"
 
 # ─────────────────────────────────
