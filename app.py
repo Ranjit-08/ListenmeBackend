@@ -89,13 +89,13 @@ def _send_email_worker(to_email, subject, html):
         print(f"EMAIL SENT to {to_email} — {resp.status_code}: {resp.text}")
     except Exception as e:
         print(f"EMAIL ERROR to {to_email}: {e}")
-        
+
 def send_email(to_email, subject, html):
     """Fire-and-forget — returns instantly, email sends in background."""
     threading.Thread(
         target=_send_email_worker,
         args=(to_email, subject, html),
-        daemon=True
+        daemon=False
     ).start()
     return True
 
