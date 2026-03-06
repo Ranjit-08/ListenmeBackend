@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 from functools import wraps
 from botocore.exceptions import NoCredentialsError
 import uuid
+import threading
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -21,31 +22,19 @@ load_dotenv()
 app = Flask(__name__)
 
 # ─────────────────────────────────
-# CORS CONFIG
+# CORS — open to all origins
 # ─────────────────────────────────
 
-CORS(
-    app,
-    resources={r"/api/*": {
-        "origins": [
-            "https://ranjit-9qx.pages.dev",
-            "http://localhost:3000"
-        ]
-    }},
-    supports_credentials=True
-)
+CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=False)
 
 # ─────────────────────────────────
-# SECRET
+# SECRET KEY
 # ─────────────────────────────────
 
-app.config["SECRET_KEY"] = os.environ.get(
-    "SECRET_KEY",
-    "change-this-secret-key-in-production"
-)
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "change-this-secret-key-in-production")
 
 # ─────────────────────────────────
-# DATABASE CONFIG
+# DATABASE — Railway MySQL
 # ─────────────────────────────────
 
 DB_HOST     = os.environ.get("DB_HOST",     "caboose.proxy.rlwy.net")
@@ -55,36 +44,36 @@ DB_NAME     = os.environ.get("DB_NAME",     "railway")
 DB_PORT     = int(os.environ.get("DB_PORT", 19082))
 
 # ─────────────────────────────────
-# S3 / BACKBLAZE B2 CONFIG
+# S3 — Backblaze B2
 # ─────────────────────────────────
 
-S3_BUCKET      = os.environ.get("S3_BUCKET",    "listenme-music")
-S3_ENDPOINT    = os.environ.get("S3_ENDPOINT",  "https://s3.us-east-005.backblazeb2.com")
-S3_REGION      = os.environ.get("S3_REGION",    "us-east-005")
+S3_BUCKET      = os.environ.get("S3_BUCKET",      "listenme-music")
+S3_ENDPOINT    = os.environ.get("S3_ENDPOINT",    "https://s3.us-east-005.backblazeb2.com")
+S3_REGION      = os.environ.get("S3_REGION",      "us-east-005")
 AWS_ACCESS_KEY = os.environ.get("AWS_ACCESS_KEY", "00507a107ceeaba0000000001")
 AWS_SECRET_KEY = os.environ.get("AWS_SECRET_KEY", "K005D6N2B91manO8ch1pKno+nhmQp98")
 
 # ─────────────────────────────────
-# GMAIL CONFIG — hardcoded
+# GMAIL — hardcoded
 # ─────────────────────────────────
 
 GMAIL_USER     = "ranjit999yt@gmail.com"
-GMAIL_PASSWORD = "kcsmehmhodudnnbm"      # Gmail App Password (16 chars, no spaces)
+GMAIL_PASSWORD = "kcsmehmhodudnnbm"   # Gmail App Password — 16 chars no spaces
 MAIL_FROM_NAME = "ListenMe"
 
 # ─────────────────────────────────
-# ADMIN EMAIL
+# ADMIN
 # ─────────────────────────────────
 
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "ranjitsamalarj@gmail.com").strip().lower()
+APP_URL     = os.environ.get("APP_URL",     "https://ranjit-9qx.pages.dev").rstrip("/")
 
 
-# ─────────────────────────────────
-# SEND EMAIL via Gmail SMTP
-# Works for ANY recipient email address
-# ─────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+#  EMAIL — background thread so it NEVER blocks / times out the request
+# ═══════════════════════════════════════════════════════════════════════════════
 
-def send_email(to_email, subject, html):
+def _send_email_worker(to_email, subject, html):
     try:
         msg = MIMEMultipart("alternative")
         msg["Subject"] = subject
@@ -92,18 +81,26 @@ def send_email(to_email, subject, html):
         msg["To"]      = to_email
         msg.attach(MIMEText(html, "html"))
 
-        with smtplib.SMTP("smtp.gmail.com", 587) as server:
+        with smtplib.SMTP("smtp.gmail.com", 587, timeout=30) as server:
             server.ehlo()
             server.starttls()
             server.login(GMAIL_USER, GMAIL_PASSWORD)
             server.sendmail(GMAIL_USER, to_email, msg.as_string())
 
-        print(f"EMAIL SENT SUCCESS to {to_email}")
-        return True
+        print(f"EMAIL SENT to {to_email}")
 
     except Exception as e:
         print(f"EMAIL ERROR to {to_email}: {e}")
-        return False
+
+
+def send_email(to_email, subject, html):
+    """Fire-and-forget — returns instantly, email sends in background."""
+    threading.Thread(
+        target=_send_email_worker,
+        args=(to_email, subject, html),
+        daemon=True
+    ).start()
+    return True
 
 
 # ─── EMAIL TEMPLATE ────────────────────────────────────────────────────────────
@@ -113,9 +110,7 @@ def _email_base(content):
     <div style="font-family:'Helvetica Neue',Arial,sans-serif;max-width:520px;margin:auto;
                 background:#111;color:#e2e8f0;border-radius:16px;overflow:hidden;">
       <div style="background:linear-gradient(135deg,#1db954,#17a349);padding:32px 40px;">
-        <h1 style="margin:0;font-size:26px;font-weight:900;letter-spacing:-0.5px;color:#fff;">
-          🎧 ListenMe
-        </h1>
+        <h1 style="margin:0;font-size:26px;font-weight:900;color:#fff;">🎧 ListenMe</h1>
         <p style="margin:6px 0 0;font-size:13px;color:rgba(255,255,255,0.75);">
           Your personal music streaming space
         </p>
@@ -127,8 +122,22 @@ def _email_base(content):
     </div>
     """
 
+def _otp_content(heading, otp):
+    return f"""
+        <p style="font-size:18px;font-weight:700;margin:0 0 8px;">{heading}</p>
+        <p style="color:#888;margin:0 0 24px;">Your verification code:</p>
+        <div style="background:#1a1a1a;border-radius:12px;padding:28px;
+                    text-align:center;margin-bottom:24px;">
+            <div style="font-size:44px;font-weight:900;letter-spacing:14px;
+                        color:#1db954;">{otp}</div>
+        </div>
+        <p style="color:#555;font-size:13px;">Expires in 10 minutes.</p>
+    """
 
-# ─── DATABASE ──────────────────────────────────────────────────────────────────
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  DATABASE
+# ═══════════════════════════════════════════════════════════════════════════════
 
 def get_db():
     return pymysql.connect(
@@ -203,7 +212,7 @@ def init_db():
             try:
                 c.execute("ALTER TABLE songs ADD COLUMN cover_s3_key VARCHAR(512) AFTER s3_key")
             except Exception:
-                pass
+                pass  # already exists
             c.execute("""
                 CREATE TABLE IF NOT EXISTS favorites (
                     id       INT AUTO_INCREMENT PRIMARY KEY,
@@ -230,7 +239,9 @@ def init_db():
         conn.close()
 
 
-# ─── S3 / BACKBLAZE B2 ─────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+#  S3 — Backblaze B2 (requires signature_version s3v4)
+# ═══════════════════════════════════════════════════════════════════════════════
 
 def get_s3():
     return boto3.client(
@@ -243,15 +254,18 @@ def get_s3():
     )
 
 
+# ─── HELPERS ───────────────────────────────────────────────────────────────────
+
 def hash_password(p):
     return hashlib.sha256(p.encode()).hexdigest()
-
 
 def generate_otp():
     return ''.join(random.choices(string.digits, k=6))
 
 
-# ─── AUTH DECORATORS ───────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+#  AUTH DECORATORS
+# ═══════════════════════════════════════════════════════════════════════════════
 
 def token_required(f):
     @wraps(f)
@@ -332,21 +346,13 @@ def signup():
             )
         conn.close()
 
+        # Send OTP in background — request returns instantly
         send_email(
             email,
             "Verify your ListenMe account",
-            _email_base(f"""
-                <p style="font-size:18px;font-weight:700;margin:0 0 8px;">
-                    Welcome, {name}! 🎧</p>
-                <p style="color:#888;margin:0 0 24px;">Your verification code:</p>
-                <div style="background:#1a1a1a;border-radius:12px;padding:28px;
-                            text-align:center;margin-bottom:24px;">
-                    <div style="font-size:44px;font-weight:900;letter-spacing:14px;
-                                color:#1db954;">{otp}</div>
-                </div>
-                <p style="color:#555;font-size:13px;">Expires in 10 minutes.</p>
-            """)
+            _email_base(_otp_content(f"Welcome, {name}! 🎧", otp))
         )
+
         return jsonify({'message': 'Verification code sent'}), 201
 
     except Exception as e:
@@ -419,15 +425,7 @@ def resend_otp():
         send_email(
             email,
             "Your new ListenMe verification code",
-            _email_base(f"""
-                <p style="font-size:18px;font-weight:700;margin:0 0 8px;">New verification code</p>
-                <div style="background:#1a1a1a;border-radius:12px;padding:28px;
-                            text-align:center;margin-bottom:24px;">
-                    <div style="font-size:44px;font-weight:900;letter-spacing:14px;
-                                color:#1db954;">{otp}</div>
-                </div>
-                <p style="color:#555;font-size:13px;">Expires in 10 minutes.</p>
-            """)
+            _email_base(_otp_content("New verification code", otp))
         )
         return jsonify({'message': 'New code sent.'}), 200
     finally:
@@ -457,16 +455,7 @@ def login():
                 send_email(
                     email,
                     "Verify your ListenMe account",
-                    _email_base(f"""
-                        <p style="font-size:18px;font-weight:700;margin:0 0 8px;">
-                            Verify your account</p>
-                        <div style="background:#1a1a1a;border-radius:12px;padding:28px;
-                                    text-align:center;margin-bottom:24px;">
-                            <div style="font-size:44px;font-weight:900;letter-spacing:14px;
-                                        color:#1db954;">{otp}</div>
-                        </div>
-                        <p style="color:#555;font-size:13px;">Expires in 10 minutes.</p>
-                    """)
+                    _email_base(_otp_content("Verify your account", otp))
                 )
                 return jsonify({'error': 'verify_required', 'email': email}), 403
 
@@ -532,8 +521,7 @@ def forgot_password():
                     "INSERT INTO password_reset_tokens (email, token, expires_at) VALUES (%s,%s,%s)",
                     (email, reset_token, expires)
                 )
-                app_url    = os.environ.get('APP_URL', 'https://ranjit-9qx.pages.dev').rstrip('/')
-                reset_link = f"{app_url}/reset-password.html?token={reset_token}"
+                reset_link = f"{APP_URL}/reset-password.html?token={reset_token}"
                 send_email(
                     email,
                     "Reset your ListenMe password",
@@ -640,6 +628,7 @@ def upload_song():
         print(f"Audio upload error: {e}")
         return jsonify({'error': f'Audio upload failed: {str(e)}'}), 500
 
+    # Cover image upload
     cover_key  = None
     cover_file = request.files.get('cover')
     if cover_file and cover_file.filename:
@@ -678,6 +667,7 @@ def upload_song():
 
 
 def _presign_songs(songs):
+    """Add presigned audio_url and cover_url to each song dict."""
     s3 = get_s3()
     for song in songs:
         try:
@@ -727,6 +717,7 @@ def get_songs():
             songs = c.fetchall()
             c.execute("SELECT song_id FROM favorites WHERE user_id=%s", (request.user_id,))
             fav_ids = {row['song_id'] for row in c.fetchall()}
+
         songs = _presign_songs(songs)
         for song in songs:
             song['is_favorite'] = song['id'] in fav_ids
@@ -916,11 +907,16 @@ def health():
     return jsonify({'status': 'ok', 'app': 'ListenMe'}), 200
 
 
-# ─── STARTUP ───────────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+#  STARTUP
+# ═══════════════════════════════════════════════════════════════════════════════
 
-print(f"Admin : {ADMIN_EMAIL}")
-print(f"Gmail : {GMAIL_USER}")
-print(f"S3    : {S3_ENDPOINT} / {S3_BUCKET}")
+print("=" * 50)
+print(f"Admin  : {ADMIN_EMAIL}")
+print(f"Gmail  : {GMAIL_USER}")
+print(f"S3     : {S3_ENDPOINT} / {S3_BUCKET}")
+print(f"App URL: {APP_URL}")
+print("=" * 50)
 
 init_db()
 
