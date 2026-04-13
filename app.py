@@ -13,7 +13,9 @@ from functools import wraps
 from botocore.exceptions import NoCredentialsError
 import uuid
 import threading
-import requests as http_requests
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 load_dotenv()
 
@@ -35,11 +37,11 @@ app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "change-this-secret-key-
 # DATABASE — Railway MySQL
 # ─────────────────────────────────
 
-DB_HOST     = os.environ.get("DB_HOST",     "caboose.proxy.rlwy.net")
+DB_HOST     = os.environ.get("DB_HOST",     "monorail.proxy.rlwy.net")
 DB_USER     = os.environ.get("DB_USER",     "root")
-DB_PASSWORD = os.environ.get("DB_PASSWORD", "XUvaTHlooMyxvtugwAEbgyYxIZRwzdAQ")
+DB_PASSWORD = os.environ.get("DB_PASSWORD", "SWRuJYTSoeTCOMBPDdaCAIkNWaZPRvBt")
 DB_NAME     = os.environ.get("DB_NAME",     "railway")
-DB_PORT     = int(os.environ.get("DB_PORT", 19082))
+DB_PORT     = int(os.environ.get("DB_PORT", 43490))
 
 # ─────────────────────────────────
 # S3 — Backblaze B2
@@ -48,15 +50,15 @@ DB_PORT     = int(os.environ.get("DB_PORT", 19082))
 S3_BUCKET      = os.environ.get("S3_BUCKET",      "listenme-music")
 S3_ENDPOINT    = os.environ.get("S3_ENDPOINT",    "https://s3.us-east-005.backblazeb2.com")
 S3_REGION      = os.environ.get("S3_REGION",      "us-east-005")
-AWS_ACCESS_KEY = os.environ.get("AWS_ACCESS_KEY", "00507a107ceeaba0000000001")
-AWS_SECRET_KEY = os.environ.get("AWS_SECRET_KEY", "K005D6N2B91manO8ch1pKno+nhmQp98")
+AWS_ACCESS_KEY = os.environ.get("AWS_ACCESS_KEY", "00507a107ceeaba0000000002")
+AWS_SECRET_KEY = os.environ.get("AWS_SECRET_KEY", "K005sBMBykKNzlr1uXoS1VttOSBaxzY")
 
 # ─────────────────────────────────
 # GMAIL — hardcoded
 # ─────────────────────────────────
 
 GMAIL_USER     = "ranjit999yt@gmail.com"
-GMAIL_PASSWORD = "ncyyuueotsbxflcf"   # Gmail App Password — 16 chars no spaces
+GMAIL_PASSWORD = "kcsmehmhodudnnbm"   # Gmail App Password — 16 chars no spaces
 MAIL_FROM_NAME = "ListenMe"
 
 # ─────────────────────────────────
@@ -70,34 +72,36 @@ APP_URL     = os.environ.get("APP_URL",     "https://ranjit-9qx.pages.dev").rstr
 # ═══════════════════════════════════════════════════════════════════════════════
 #  EMAIL — background thread so it NEVER blocks / times out the request
 # ═══════════════════════════════════════════════════════════════════════════════
+
 def _send_email_worker(to_email, subject, html):
     try:
-        resp = http_requests.post(
-            "https://api.resend.com/emails",
-            headers={
-                "Authorization": f"Bearer {os.environ.get('RESEND_API_KEY', '')}",
-                "Content-Type":  "application/json",
-            },
-            json={
-                "from":    "ListenMe <otp@arjsu.shop>",
-                "to":      [to_email],
-                "subject": subject,
-                "html":    html,
-            },
-            timeout=15
-        )
-        print(f"EMAIL SENT to {to_email} — {resp.status_code}: {resp.text}")
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"]    = f"{MAIL_FROM_NAME} <{GMAIL_USER}>"
+        msg["To"]      = to_email
+        msg.attach(MIMEText(html, "html"))
+
+        with smtplib.SMTP("smtp.gmail.com", 587, timeout=30) as server:
+            server.ehlo()
+            server.starttls()
+            server.login(GMAIL_USER, GMAIL_PASSWORD)
+            server.sendmail(GMAIL_USER, to_email, msg.as_string())
+
+        print(f"EMAIL SENT to {to_email}")
+
     except Exception as e:
         print(f"EMAIL ERROR to {to_email}: {e}")
+
 
 def send_email(to_email, subject, html):
     """Fire-and-forget — returns instantly, email sends in background."""
     threading.Thread(
         target=_send_email_worker,
         args=(to_email, subject, html),
-        daemon=False
+        daemon=True
     ).start()
     return True
+
 
 # ─── EMAIL TEMPLATE ────────────────────────────────────────────────────────────
 
@@ -246,7 +250,10 @@ def get_s3():
         aws_access_key_id=AWS_ACCESS_KEY,
         aws_secret_access_key=AWS_SECRET_KEY,
         region_name=S3_REGION,
-        config=boto3.session.Config(signature_version='s3v4')
+        config=boto3.session.Config(
+            signature_version='s3v4',
+            s3={'addressing_style': 'path'}
+        )
     )
 
 
